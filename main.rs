@@ -1,49 +1,67 @@
 use typedb_driver::{
-    Connection, DatabaseManager, Options, Session, SessionType, TransactionType,
+    Credentials, DriverOptions, TransactionType, TypeDBDriver,
 };
+use futures::StreamExt;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to the TypeDB server
-    let connection = Connection::new_core("localhost:1729").await?;
-    println!("Connected to TypeDB server");
+fn main() {
+    async_std::task::block_on(async {
+        // Connect to TypeDB server with credentials
+        let driver = TypeDBDriver::new_core(
+            TypeDBDriver::DEFAULT_ADDRESS,
+            Credentials::new("admin", "password"),
+            DriverOptions::new(false, None).unwrap(),
+        )
+        .await
+        .unwrap();
 
-    // Access the database management interface
-    let databases = DatabaseManager::new(connection.clone());
+        // Check for existing database or create a new one
+        let db_name = "test_db";
+        if !driver.databases().contains(db_name).await.unwrap() {
+            println!("Creating database '{}'...", db_name);
+            driver.databases().create(db_name).await.unwrap();
+        }
 
-    // List all databases
-    let db_names = databases.all().await?;
-    println!("Available databases:");
-    for name in db_names {
-        println!("- {}", name);
-    }
+        let database = driver.databases().get(db_name).await.unwrap();
+        println!("Connected to database: {}", database.name());
 
-    // Create a test database if it doesn't exist
-    let db_name = "test_db";
-    if !databases.contains(db_name).await? {
-        println!("Creating database '{}'...", db_name);
-        databases.create(db_name).await?;
-    }
+        // Define a schema
+        let transaction = driver.transaction(database.name(), TransactionType::Schema).await.unwrap();
+        let define_query = r#"
+        define
+          entity person, owns name;
+          attribute name, value string;
+        "#;
 
-    // Open a session with the database
-    let session = Session::new(connection, db_name.to_string(), SessionType::Schema, Options::new()).await?;
-    println!("Opened session to database '{}'", db_name);
+        let result = transaction.query(define_query).await;
+        match result {
+            Ok(_)      => println!("Schema defined successfully"),
+            Err(error) => println!("Error defining schema: {}", error),
+        }
 
-    // Start a transaction
-    let tx = session.transaction(TransactionType::Write, Options::new()).await?;
+        transaction.commit().await.unwrap();
+        println!("Schema transaction committed");
 
-    // Define a simple schema
-    let define_query = "define person sub entity, owns name; name sub attribute, value string;";
-    tx.query().define(define_query).await?;
-    println!("Defined schema: person entity with name attribute");
+        // List all entity types to verify
+        let transaction = driver.transaction(database.name(), TransactionType::Read).await.unwrap();
+        let query_result = transaction.query("match entity $x;")
+	    .await.unwrap();
 
-    // Commit the transaction
-    tx.commit().await?;
+        let mut rows = Vec::new();
+        let mut stream = query_result.into_rows();
+        while let Some(row_result) = stream.next().await {
+            if let Ok(row) = row_result {
+                rows.push(row);
+            }
+        }
 
-    println!("Successfully committed schema changes");
+        println!("Found {} entity types:", rows.len());
 
-    // Close the session
-    session.close().await?;
+        for row in rows {
+            if let Ok(Some(concept)) = row.get("x") {
+                println!("- {}", concept.get_label());
+            }
+        }
 
-    Ok(())
+        println!("Test complete!");
+    })
 }

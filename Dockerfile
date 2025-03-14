@@ -46,6 +46,14 @@ ENV CARGO_HOME="/usr/local/cargo"
 
 
 ###
+### Stragglers. It would be more natural to install these earlier,
+### but that would make building the container slower now.
+###
+
+RUN apt install -y build-essential
+
+
+###
 ### Interface
 ###
 
@@ -54,12 +62,13 @@ RUN useradd -u 1001 -g users user  && \
     chown -R user:users /home/user && \
     chmod -R 777        /home/user
 
-RUN mkdir /mnt/src                   \
-          /mnt/data                  \
-	  /mnt/write                 \
-	  /mnt/write/server-data  && \
-    chown -R user:users /home/user /opt /mnt && \
-    chmod -R 777        /home/user /opt /mnt/write /mnt/data
+RUN chmod -R        777 /opt/typedb && \
+    chown -R user:users /opt/typedb
+
+RUN mkdir -p /usr/local/cargo/registry         && \
+    chown -R user:users /usr/local/cargo/registry \
+                        /usr/local/cargo/bin   && \
+    chmod -R 777 /usr/local/cargo/registry
 
 USER user
 

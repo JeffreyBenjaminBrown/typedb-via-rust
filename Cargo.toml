@@ -1,0 +1,14 @@
+[package]
+name = "typedb_test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.44.1", features = ["full"] }
+typedb-driver = "3.0.5"
+async-std = { version = "1.12", features = ["attributes"] }
+futures = "0.3"
+
+[[bin]]
+name = "typedb_test"
+path = "main.rs"
